@@ -17,6 +17,9 @@ defmodule Pow.Plug.Session do
   The session id used in the client is signed using `Pow.Plug.sign_token/4` to
   prevent timing attacks.
 
+  Telemetry events are dispatched for the lifecycle of the sessions. See
+  `Pow.telemetry_event/5` for more.
+
   ## Example
 
       @pow_config [
@@ -189,6 +192,12 @@ defmodule Pow.Plug.Session do
       |> Keyword.put(:inserted_at, timestamp())
 
     {user, metadata}
+    end
+
+  defp log_create(conn, session_id, value, config) do
+    Pow.telemetry_event(config, __MODULE__, :create, %{}, %{conn: conn, value: value, key: session_id})
+
+    conn
   end
 
   defp gen_fingerprint(), do: UUID.generate()
@@ -200,7 +209,9 @@ defmodule Pow.Plug.Session do
     register_before_send(conn, fn conn ->
       store.put(store_config, session_id, value)
 
-      client_store_put(conn, session_id, config)
+      conn
+      |> log_create(session_id, value, config)
+      |> client_store_put(session_id, config)
     end)
   end
 
@@ -228,9 +239,17 @@ defmodule Pow.Plug.Session do
         {session_id, conn} ->
           store.delete(store_config, session_id)
 
-          client_store_delete(conn, config)
+          conn
+          |> client_store_delete(config)
+          |> log_delete(session_id, config)
       end
     end)
+  end
+
+  defp log_delete(conn, session_id, config) do
+    Pow.telemetry_event(config, __MODULE__, :delete, %{}, %{conn: conn, key: session_id})
+
+    conn
   end
 
   # TODO: Remove by 1.1.0

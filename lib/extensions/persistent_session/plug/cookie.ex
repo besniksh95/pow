@@ -105,7 +105,9 @@ defmodule PowPersistentSession.Plug.Cookie do
     register_before_send(conn, fn conn ->
       store.put(store_config, token, value)
 
-      client_store_put(conn, token, config)
+      conn
+      |> client_store_put(token, config)
+      |> log_create(token, value, config)
     end)
   end
 
@@ -144,6 +146,12 @@ defmodule PowPersistentSession.Plug.Cookie do
     end
   end
 
+  defp log_create(conn, token, value, config) do
+    Pow.telemetry_event(config, __MODULE__, :create, %{}, %{conn: conn, key: token, value: value})
+
+    conn
+  end
+
   @doc """
   Expires the persistent session.
 
@@ -163,7 +171,9 @@ defmodule PowPersistentSession.Plug.Cookie do
         {token, conn} ->
           expire_token_in_store(token, config)
 
-          client_store_delete(conn, config)
+          conn
+          |> log_delete(token, config)
+          |> client_store_delete(config)
       end
     end)
   end
@@ -172,6 +182,12 @@ defmodule PowPersistentSession.Plug.Cookie do
     {store, store_config} = store(config)
 
     store.delete(store_config, token)
+  end
+
+  defp log_delete(conn, token, config) do
+    Pow.telemetry_event(config, __MODULE__, :delete, %{}, %{conn: conn, key: token})
+
+    conn
   end
 
   @doc """
