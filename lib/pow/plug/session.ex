@@ -268,12 +268,12 @@ defmodule Pow.Plug.Session do
     |> Keyword.get(:inserted_at)
     |> session_stale?(config)
     |> case do
-      true  -> lock_create(conn, session_id, user, config)
+      true  -> lock_create(conn, session_id, user, metadata, config)
       false -> {conn, user}
     end
   end
 
-  defp lock_create(conn, session_id, user, config) do
+  defp lock_create(conn, session_id, user, metadata, config) do
     id    = {[__MODULE__, session_id], self()}
     nodes = Node.list() ++ [node()]
 
@@ -282,6 +282,8 @@ defmodule Pow.Plug.Session do
         {conn, user} = create(conn, user, config)
 
         conn = register_before_send(conn, fn conn ->
+          log_stale(conn, session_id, {user, metadata}, config)
+
           :global.del_lock(id, nodes)
 
           conn
@@ -292,6 +294,12 @@ defmodule Pow.Plug.Session do
       false ->
         {conn, user}
     end
+  end
+
+  defp log_stale(conn, key, value, config) do
+    Pow.telemetry_event(config, __MODULE__, :stale_session, %{}, %{conn: conn, value: value, key: key})
+
+    conn
   end
 
   defp session_stale?(inserted_at, config) do
